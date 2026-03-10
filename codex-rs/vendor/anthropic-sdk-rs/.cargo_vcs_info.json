@@ -1,0 +1,7 @@
+{
+  "git": {
+    "sha1": "7ee8d086b56a5123a42be2861517fb07aade258a",
+    "dirty": true
+  },
+  "path_in_vcs": "crates/anthropic-sdk"
+}

@@ -735,8 +735,13 @@ impl AnthropicStreamState {
     ) -> Result<()> {
         match event {
             RawMessageStreamEvent::MessageStart { message } => {
-                self.response_id = Some(message.id.clone());
-                self.message_id = Some(message.id);
+                let message_id = if message.id.trim().is_empty() {
+                    None
+                } else {
+                    Some(message.id)
+                };
+                self.response_id = message_id.clone();
+                self.message_id = message_id;
                 self.message_item_started = false;
                 self.reasoning_item_started = false;
                 self.reasoning_item_done = false;
@@ -972,6 +977,7 @@ impl AnthropicStreamState {
         let response_id = self
             .response_id
             .clone()
+            .filter(|id| !id.is_empty())
             .unwrap_or_else(|| "anthropic-response".to_string());
         send_event(
             tx_event,

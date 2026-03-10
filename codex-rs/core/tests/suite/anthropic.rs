@@ -270,6 +270,94 @@ async fn anthropic_prefers_api_key_over_bearer_auth() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn anthropic_stream_tolerates_message_start_without_id() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = MockServer::start().await;
+
+    let sse = anthropic_sse(vec![
+        json!({
+            "type":"message_start",
+            "message": {
+                "type":"message",
+                "role":"assistant",
+                "content":[]
+            }
+        }),
+        json!({
+            "type":"content_block_start",
+            "index":0,
+            "content_block":{"type":"text","text":""}
+        }),
+        json!({
+            "type":"content_block_delta",
+            "index":0,
+            "delta":{"type":"text_delta","text":"ok-without-id"}
+        }),
+        json!({
+            "type":"message_delta",
+            "delta":{"stop_reason":"end_turn","stop_sequence":null},
+            "usage":{"input_tokens":8,"output_tokens":3,"cache_read_input_tokens":0}
+        }),
+        json!({"type":"message_stop"}),
+    ]);
+
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_raw(sse, "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let test = test_codex()
+        .with_config({
+            let provider = anthropic_provider(server.uri());
+            move |config| {
+                config.model_provider = provider;
+            }
+        })
+        .build(&server)
+        .await?;
+    let model = test.session_configured.model.clone();
+
+    test.codex
+        .submit(Op::UserTurn {
+            items: vec![UserInput::Text {
+                text: "hello without id".to_string(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            cwd: test.cwd.path().to_path_buf(),
+            approval_policy: AskForApproval::Never,
+            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            model,
+            effort: None,
+            summary: Some(ReasoningSummary::Auto),
+            service_tier: None,
+            collaboration_mode: None,
+            personality: None,
+        })
+        .await?;
+
+    let message = wait_for_event_match(&test.codex, |event| match event {
+        EventMsg::AgentMessage(msg) => Some(msg.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(message.message, "ok-without-id");
+
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn anthropic_output_schema_auto_repairs_invalid_json() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 

@@ -398,8 +398,6 @@ dependencies = [
 [[package]]
 name = "anthropic-sdk-rs"
 version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "707cf3d4f8e20d8c1ae8c0605ddaf3ea02cc64d0a6c898f5db20cc7db13ea871"
 dependencies = [
  "bytes",
  "fastrand",

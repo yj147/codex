@@ -65,6 +65,8 @@ pub const SYSTEM_CONFIG_TOML_FILE_UNIX: &str = "/etc/codex/config.toml";
 const DEFAULT_PROGRAM_DATA_DIR_WINDOWS: &str = r"C:\ProgramData";
 
 const DEFAULT_PROJECT_ROOT_MARKERS: &[&str] = &[".git"];
+pub(crate) const STELLAR_CODEX_DISABLE_PROJECT_CONFIG_ENV_VAR: &str =
+    "STELLAR_CODEX_DISABLE_PROJECT_CONFIG";
 
 pub(crate) async fn first_layer_config_error(layers: &ConfigLayerStack) -> Option<ConfigError> {
     codex_config::first_layer_config_error::<ConfigToml>(layers, CONFIG_TOML_FILE).await
@@ -114,6 +116,27 @@ pub async fn load_config_layers_state(
     cli_overrides: &[(String, TomlValue)],
     overrides: LoaderOverrides,
     cloud_requirements: CloudRequirementsLoader,
+) -> io::Result<ConfigLayerStack> {
+    let should_load_project_layers =
+        std::env::var_os(STELLAR_CODEX_DISABLE_PROJECT_CONFIG_ENV_VAR).is_none();
+    load_config_layers_state_inner(
+        codex_home,
+        cwd,
+        cli_overrides,
+        overrides,
+        cloud_requirements,
+        should_load_project_layers,
+    )
+    .await
+}
+
+async fn load_config_layers_state_inner(
+    codex_home: &Path,
+    cwd: Option<AbsolutePathBuf>,
+    cli_overrides: &[(String, TomlValue)],
+    overrides: LoaderOverrides,
+    cloud_requirements: CloudRequirementsLoader,
+    should_load_project_layers: bool,
 ) -> io::Result<ConfigLayerStack> {
     let mut config_requirements_toml = ConfigRequirementsWithSources::default();
 
@@ -190,7 +213,7 @@ pub async fn load_config_layers_state(
     .await?;
     layers.push(user_layer);
 
-    if let Some(cwd) = cwd {
+    if should_load_project_layers && let Some(cwd) = cwd {
         let mut merged_so_far = TomlValue::Table(toml::map::Map::new());
         for layer in &layers {
             merge_toml_values(&mut merged_so_far, &layer.config);

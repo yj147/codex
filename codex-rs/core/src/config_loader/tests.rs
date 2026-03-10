@@ -811,6 +811,51 @@ async fn project_layers_prefer_closest_cwd() -> std::io::Result<()> {
 }
 
 #[tokio::test]
+async fn can_skip_project_layers_entirely() -> std::io::Result<()> {
+    let tmp = tempdir()?;
+    let project_root = tmp.path().join("project");
+    tokio::fs::create_dir_all(project_root.join(".codex")).await?;
+    tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
+    tokio::fs::write(
+        project_root.join(".codex").join(CONFIG_TOML_FILE),
+        "model = \"gpt-5.3-codex\"\n",
+    )
+    .await?;
+
+    let codex_home = tmp.path().join("home");
+    tokio::fs::create_dir_all(&codex_home).await?;
+    tokio::fs::write(codex_home.join(CONFIG_TOML_FILE), "model = \"gpt-5.4\"\n").await?;
+
+    let cwd = AbsolutePathBuf::from_absolute_path(&project_root)?;
+    let layers = super::load_config_layers_state_inner(
+        &codex_home,
+        Some(cwd),
+        &[] as &[(String, TomlValue)],
+        LoaderOverrides::default(),
+        CloudRequirementsLoader::default(),
+        false,
+    )
+    .await?;
+
+    assert_eq!(
+        layers
+            .layers_high_to_low()
+            .into_iter()
+            .filter(|layer| matches!(layer.name, super::ConfigLayerSource::Project { .. }))
+            .count(),
+        0,
+    );
+
+    let effective_config = layers.effective_config();
+    let model = effective_config
+        .get("model")
+        .and_then(TomlValue::as_str)
+        .expect("model entry");
+    assert_eq!(model, "gpt-5.4");
+    Ok(())
+}
+
+#[tokio::test]
 async fn project_paths_resolve_relative_to_dot_codex_and_override_in_order() -> std::io::Result<()>
 {
     let tmp = tempdir()?;
